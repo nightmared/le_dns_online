@@ -4,8 +4,17 @@
 
 le_dns_online is a frontend intended to provide dns validation of *Let's Encrypt* for the french cloud provider & hoster [online.net](https://www.online.net/en). More specifically, its goal is to integrate easily with [acme.sh](https://github.com/Neilpang/acme.sh).
 
+## Building instructions
+
+You need to use the Rust nightly compiler for now as I use the 2018 edition (there is no real incentive for it, to be honest).
+```
+cargo build --release
+```
+And the binary is located in 'target/release/le_dns_online'.
+
 ## How do I install it ?
 
+First, build the binary according to the 'building instructions' section.
 You just need to add 'dns_online.sh' and the binary le_dns_online to the dnsapi folder inside '~/.acme.sh' (or whichever folder you use for acme.sh). You must then update the api_key in dns_online.sh to your private key (given at https://console.online.net/en/api/access) and you're good to go !
 
 ## How does it work ?
@@ -23,6 +32,10 @@ This time, le_dns_online:
 3) delete the temporary zone
 
 And voilà ! You have your certs validated ;)
+
+## Remaining work
+
+Logging !
 
 ## Known issues
 
