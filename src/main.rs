@@ -119,7 +119,6 @@ impl<'a> Domain<'a> {
         };
         self.enable_version(&original_version)?;
         self.delete_version(&tmp_version)?;
-        
 
         Ok(())
 
