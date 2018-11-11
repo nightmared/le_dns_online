@@ -16,7 +16,6 @@ fn usage(app_name: &str) {
     eprintln!("\t{} delete_record ONLINE_API_KEY RECORD TXT_VALUE", app_name);
 }
 
-
 // Extract two parts from the domain to be used in LE auth check:
 // the domain on which we must act and the record name
 fn extract_domain<'a>(domain: &'a str, domains: Vec<Domain<'a>>) -> Option<(Domain<'a>, String)> {
