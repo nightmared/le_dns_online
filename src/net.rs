@@ -1,5 +1,5 @@
 use curl::easy::{Easy2, Handler, List, WriteError};
-pub use crate::config::*;
+use crate::config::*;
 use std::convert;
 
 impl convert::From<curl::Error> for Error {
@@ -23,6 +23,8 @@ impl Handler for Collector {
     }
 }
 
+/// Generate a query using curl easyHTTP interface
+/// This will request the api endpoint at the url api_endpoint with the user-supplied authentification token auth_token
 pub fn make_query(api_endpoint: &str, auth_token: &str) -> Result<Easy2<Collector>, curl::Error> {
     let mut easy = Easy2::new(Collector(String::with_capacity(4096)));
 
@@ -38,9 +40,9 @@ pub fn make_query(api_endpoint: &str, auth_token: &str) -> Result<Easy2<Collecto
     Ok(easy)
 }
 
-// Generate and execute an HTTP query to 'api_endpoint'.
-// This function allow you tu provide a function to configure the query (e.g. setting the type of query
-// or adding data) and another function to parse the api response
+/// Generate and execute an HTTP query to 'api_endpoint'.
+/// This function allow you to provide a callback to configure the query (e.g. setting the type of query
+/// or adding data) and another function to parse the response from the api endpoint
 pub fn execute_query<T, F, F2, I: Into<Error>, I2: Into<Error>>(auth_token: &str, api_endpoint: &str, configure: F, parse: F2) -> Result<T, Error>
 where F: Fn(Easy2<Collector>) -> Result<Easy2<Collector>, I> + Sized, F2: Fn(&str) -> Result<T, I2> + Sized {
     let req = make_query(api_endpoint, auth_token)?;
@@ -53,7 +55,7 @@ where F: Fn(Easy2<Collector>) -> Result<Easy2<Collector>, I> + Sized, F2: Fn(&st
     req.perform()?;
     let res_code = req.response_code()?;
     if res_code < 200 || res_code >= 400 {
-        return Err(Error::ApiError((req.effective_url()?.unwrap_or("").into(), req.response_code()?, req.get_ref().0.clone())));
+        return Err(Error::ApiError(req.effective_url()?.unwrap_or("").into(), req.response_code()?, req.get_ref().0.clone()));
     }
 
     match parse(&req.get_ref().0) {
@@ -66,25 +68,32 @@ pub fn parse_json<T>(data: &str) -> Result<T, serde_json::Error> where for <'de>
     Ok(serde_json::from_str(data)?)
 }
 
+/// Set the request to be made with HTTP GET
+/// This can be used as a simple configuration callback function for execute_query
 pub fn get_data(mut req: Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> {
     req.get(true)?;
     Ok(req)
 }
 
+/// Set the request to be made with HTTP PATCH
+/// This can be used as a simple configuration callback function for execute_query
 pub fn patch_data(mut req: Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> {
     req.custom_request("PATCH")?;
     Ok(req)
 }
 
+/// Set the request to be made with HTTP DELETE
+/// This can be used as a simple configuration callback function for execute_query
 pub fn delete_data(mut req: Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> {
     req.custom_request("DELETE")?;
     Ok(req)
 }
 
-// PostData(name, value)
+/// This struct hold a (key, value) pair of data to be added to a new HTTP POST request
 pub struct PostData<'a>(pub &'a str, pub &'a str);
 
-pub fn post_data<'a>(data: &'a[PostData<'a>]) -> impl Fn(Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> + Sized +'a {
+/// Add a list of post (key, value) pairs to the query
+pub fn post_data<'a>(data: &'a[PostData<'a>]) -> impl Fn(Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> + Sized + 'a {
     move |mut req: Easy2<Collector>| {
         req.post(true)?;
         let mut post_fields = String::with_capacity(data.len()*25);
