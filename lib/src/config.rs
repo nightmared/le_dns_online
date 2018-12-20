@@ -1,15 +1,36 @@
 use std::fmt::{Debug, Formatter, Result};
+use std::{convert, option};
 
 pub static API_URL: &'static str = "https://api.online.net/api/v1";
 
 pub enum Error {
     CurlError(curl::Error),
     SerdeError(serde_json::Error),
+    UnwrappingError,
     // ApiError(url, status_code, body)
     ApiError(String, u32, String),
     InvalidVersion,
     NoRecord
 }
+
+impl convert::From<curl::Error> for Error {
+    fn from(e: curl::Error) -> Error {
+        Error::CurlError(e)
+    }
+}
+
+impl convert::From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Error {
+        Error::SerdeError(e)
+    }
+}
+
+impl convert::From<option::NoneError> for Error {
+    fn from(_: option::NoneError) -> Error {
+        Error::UnwrappingError
+    }
+}
+
 
 impl Debug for Error {
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -19,6 +40,9 @@ impl Debug for Error {
             },
             Error::SerdeError(e) => {
                 write!(f, "Parsing Error({:?})", e)?;
+            },
+            Error::UnwrappingError => {
+                write!(f, "Err... Tried to unwrap some None there ;(")?;
             },
             Error::ApiError(url, status_code, body) => {
                 let body = if body.len() > 150 {

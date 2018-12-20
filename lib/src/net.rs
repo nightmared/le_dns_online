@@ -1,18 +1,5 @@
 use curl::easy::{Easy2, Handler, List, WriteError};
 use crate::config::*;
-use std::convert;
-
-impl convert::From<curl::Error> for Error {
-    fn from(e: curl::Error) -> Error {
-        Error::CurlError(e)
-    }
-}
-
-impl convert::From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Error {
-        Error::SerdeError(e)
-    }
-}
 
 pub struct Collector(String);
 
