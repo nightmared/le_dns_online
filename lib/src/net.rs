@@ -1,5 +1,5 @@
 use curl::easy::{Easy2, Handler, List, WriteError};
-use crate::config::*;
+use crate::error::Error;
 
 pub struct Collector(String);
 
@@ -15,7 +15,7 @@ impl Handler for Collector {
 pub fn make_query(api_endpoint: &str, auth_token: &str) -> Result<Easy2<Collector>, curl::Error> {
     let mut easy = Easy2::new(Collector(String::with_capacity(4096)));
 
-    let mut url: String = API_URL.into();
+    let mut url: String = crate::API_URL.into();
     url.push_str(api_endpoint);
     easy.url(&url)?;
 

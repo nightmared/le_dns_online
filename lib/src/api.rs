@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, de::Visitor};
 use serde_derive::*;
 
 use crate::net::*;
-use crate::config::*;
+use crate::error::Error;
 
 // We need to implement this special type because the API can return the tty both as a number and
 // as a string !? As a result, we need to parse this entry properly
@@ -103,9 +103,14 @@ pub fn query_available_domains<'a>(api_key: &'a str) -> Result<Vec<Domain<'a>>, 
 
 impl<'a> Domain<'a> {
     /// Try to extract the longest matching domain from the list of our available domains and the internal part of the name.
-    /// e.g. extract_domain("this.is.a.dummy.test.fr", {Domain("test.fr"), Domain("nope.fr")}) should return
-    /// the domain associated with "test.fr" and the internal path, aka "this.is.a.dummy."
+    /// e.g. extract_domain("this.is.a.dummy.test.fr.", {Domain("test.fr"), Domain("nope.fr")}) should return
+    /// the domain associated with "test.fr". and the internal path, aka "this.is.a.dummy."
     pub fn find_and_extract_path(full_domain_name: &'a str, domains: Vec<Domain<'a>>) -> Option<(Self, &'a str)> {
+        let mut full_domain_name = full_domain_name;
+        // delete any trailing dot
+        if full_domain_name.ends_with(".") {
+            full_domain_name = &full_domain_name[0..full_domain_name.len()-1];
+        }
         for available_domain in domains {
             if full_domain_name.ends_with(&available_domain.name) {
                 let max_len = full_domain_name.len()-available_domain.name.len()-1;
@@ -115,7 +120,7 @@ impl<'a> Domain<'a> {
         None
     }
 
-    /// Create a new (disabled for now) zone.
+    /// Create a new (disabled at the moment) zone.
     pub fn add_version(&self, name: &str) -> Result<Version, Error> {
         let domain_version_url = format!("/domain/{}/version", self.name);
         let domain_version_post_data = vec![PostData("name", &name)];

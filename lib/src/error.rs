@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Formatter, Result};
 use std::{convert, option};
 
-pub static API_URL: &'static str = "https://api.online.net/api/v1";
-
 pub enum Error {
     CurlError(curl::Error),
     SerdeError(serde_json::Error),
