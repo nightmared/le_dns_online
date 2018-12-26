@@ -39,10 +39,8 @@ fn main() {
             },
             "delete_record" => {
                 let new_zone = create_and_copy_current_zone(&domain, format!("LE-challenge-{}-validated", current_time));
-                if let Some(records) = domain.get_record(&new_zone, &record, Some(&txt_value)).unwrap() {
-                    for ref e in records {
-                        domain.delete_record(&new_zone, e).unwrap();
-                    }
+                while let Some(records) = domain.get_record(&new_zone, &record, Some(&txt_value)).unwrap() {
+                    domain.delete_record(&new_zone, &records[0]).unwrap();
                 }
                 domain.enable_version(&new_zone).unwrap();
             },

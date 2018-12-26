@@ -222,7 +222,7 @@ impl<'a> Domain<'a> {
     /// Delete a record in 'zone' matching 'record'
     pub fn delete_record(&self, zone: &Version, record: &Record) -> Result<(), Error> {
         let url = format!("/domain/{}/version/{}/zone/{}", self.name, zone.uuid_ref, record.id);
-        execute_query(self.api_key, &url, delete_data, parse_json)?;
+        execute_query(self.api_key, &url, delete_data, throw_value)?;
         Ok(())
     }
 }

@@ -55,6 +55,10 @@ pub fn parse_json<T>(data: &str) -> Result<T, serde_json::Error> where for <'de>
     Ok(serde_json::from_str(data)?)
 }
 
+pub fn throw_value(_data: &str) -> Result<(), Error> {
+    Ok(())
+}
+
 /// Set the request to be made with HTTP GET
 /// This can be used as a simple configuration callback function for execute_query
 pub fn get_data(mut req: Easy2<Collector>) -> Result<Easy2<Collector>, curl::Error> {
