@@ -25,7 +25,10 @@ fn main() {
     }
     let action = args.next().unwrap();
     let api_key = args.next().unwrap();
-    let record = args.next().unwrap();
+    let mut record = args.next().unwrap();
+    if !record.ends_with(".") {
+        record.push('.');
+    }
     let txt_value = args.next().unwrap();
 
     let available_domains = query_available_domains(&api_key).unwrap();

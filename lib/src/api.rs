@@ -88,7 +88,7 @@ pub struct Version {
 
 /// Get the list of all available domains pertaining to this user.
 pub fn query_available_domains<'a>(api_key: &'a str) -> Result<Vec<Domain<'a>>, Error> {
-    let data: Vec<Domain<'a>> = execute_query(&api_key, "/domain/", get_data, parse_json)?;
+    let data: Vec<Domain<'a>> = execute_query(&api_key, "/domain/", query_set_type(HTTPOp::GET), parse_json)?;
     Ok(
         data
         .into_iter()
@@ -124,7 +124,7 @@ impl<'a> Domain<'a> {
     pub fn add_version(&self, name: &str) -> Result<Version, Error> {
         let domain_version_url = format!("/domain/{}/version", self.name);
         let domain_version_post_data = vec![PostData("name", &name)];
-        execute_query(self.api_key, &domain_version_url, post_data(&domain_version_post_data), parse_json)
+        execute_query(self.api_key, &domain_version_url, query_set_type(HTTPOp::POST(&domain_version_post_data)), parse_json)
     }
 
     /// Extract all record with a name of "entry_name" and with a value of "entry_value" (or any value if entry_value is None) from the zone 'zone'.
@@ -153,14 +153,22 @@ impl<'a> Domain<'a> {
         let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
         let ttl = record.ttl.as_string();
         let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("priority", "12"), PostData("ttl", &ttl), PostData("data", &record.data)];
-        execute_query(self.api_key, &dest_zone_url, post_data(&post_entries), parse_json)
+        execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::POST(&post_entries)), parse_json)
+    }
+
+    /// Edit records of the active version.
+    pub fn patch_active_record(&self, destination: &Version, record: &Record) -> Result<Record, Error> {
+        let url = format!("/domain/{}/version/active", self.name);
+        //let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("records", [record.data])];
+        unimplemented!()
+
     }
 
     /// Copy all the records from 'source' to the zone 'destination' and return the updated zone records.
     /// This will not erase the curretn entries but append next to the them.
     pub fn copy_zone(&self, source: Vec<Record>, destination: &Version) -> Result<Vec<Record>, Error> {
         let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
-        let mut dest_zone: Vec<Record> = execute_query(self.api_key, &dest_zone_url, get_data, parse_json)?;
+        let mut dest_zone: Vec<Record> = execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::GET), parse_json)?;
         for ref entry in source {
             dest_zone.push(self.append_record(destination, entry)?);
         }
@@ -170,26 +178,26 @@ impl<'a> Domain<'a> {
     /// Enable a specific zone as the current one for the domain.
     pub fn enable_version(&self, v: &Version) -> Result<(), Error> {
         let url = format!("/domain/{}/version/{}/enable", self.name, v.uuid_ref);
-        execute_query(self.api_key, &url, patch_data, |_| -> Result<(), Error> { Ok(()) })
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::PATCH(None)), throw_value)
     }
 
     /// Delete an old zone.
     /// As a result, deleting the current zone will fail.
     pub fn delete_version(&self, v: &Version) -> Result<(), Error> {
         let url = format!("/domain/{}/version/{}", self.name, v.uuid_ref);
-        execute_query(self.api_key, &url, delete_data, |_| -> Result<(), Error> { Ok(()) })
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::DELETE), |_| -> Result<(), Error> { Ok(()) })
     }
 
     /// Return the list of all available zones.
     pub fn get_versions(&self) -> Result<Vec<Version>, Error> {
         let url = format!("/domain/{}/version", self.name);
-        execute_query(self.api_key, &url, get_data, parse_json)
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)
     }
 
     /// Retrieve the Version describing the currently enable zone
     pub fn get_current_zone(&self) -> Result<Version, Error> {
         let url = format!("/domain/{}/version", self.name);
-        let versions: Vec<Version> = execute_query(self.api_key, &url, get_data, parse_json)?;
+        let versions: Vec<Version> = execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)?;
         Ok(
             versions
             .into_iter()
@@ -201,7 +209,7 @@ impl<'a> Domain<'a> {
     /// Return the list of all the records in the zone 'zone'.
     pub fn get_zone_records(&self, zone: &Version) -> Result<Vec<Record>, Error> {
         let zone_url = format!("/domain/{}/version/{}/zone", self.name, zone.uuid_ref);
-        execute_query(self.api_key, &zone_url, get_data, parse_json)
+        execute_query(self.api_key, &zone_url, query_set_type(HTTPOp::GET), parse_json)
     }
 
     /// Add a new record to the zone "destination".
@@ -222,7 +230,7 @@ impl<'a> Domain<'a> {
     /// Delete a record in 'zone' matching 'record'
     pub fn delete_record(&self, zone: &Version, record: &Record) -> Result<(), Error> {
         let url = format!("/domain/{}/version/{}/zone/{}", self.name, zone.uuid_ref, record.id);
-        execute_query(self.api_key, &url, delete_data, throw_value)?;
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::DELETE), throw_value)?;
         Ok(())
     }
 }

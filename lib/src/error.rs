@@ -1,13 +1,24 @@
 use std::fmt::{Debug, Formatter, Result};
 use std::{convert, option};
 
+/// Returned when a request can't be completed and isn't expected, this may allow you to determine
+/// why this "exception" was thrown
+pub struct APIError {
+    pub url: String,
+    pub body: Vec<u8>,
+    pub status_code: u32
+}
+
+/// The various errors thay may be returned by the API, ranging from network errors to unproper use
+/// of the API, and through serializations errors.
 pub enum Error {
     CurlError(curl::Error),
     SerdeError(serde_json::Error),
+    ApiError(APIError),
     UnwrappingError,
-    // ApiError(url, status_code, body)
-    ApiError(String, u32, String),
     InvalidVersion,
+    /// Occurs when a POST is made without any argument
+    InvalidPost,
     NoRecord
 }
 
@@ -42,16 +53,19 @@ impl Debug for Error {
             Error::UnwrappingError => {
                 write!(f, "Err... Tried to unwrap some None there ;(")?;
             },
-            Error::ApiError(url, status_code, body) => {
-                let body = if body.len() > 150 {
-                        format!("{}...OUTPUT TRUNCATED...{}", &body[0..100], &body[body.len()-50..body.len()])
+            Error::ApiError(e) => {
+                let body = if e.body.len() > 150 {
+                        format!("{:?}...OUTPUT TRUNCATED...{:?}", &e.body[0..100], &e.body[e.body.len()-50..e.body.len()])
                     } else {
-                        body.clone()
+                        format!("{:?}", e.body)
                     };
-                write!(f, "API Error(url = '{}', status_code = '{}', body = '{}')", url, status_code, &body)?;
+                write!(f, "API Error(url = '{}', status_code = '{}', body = '{}')", e.url, e.status_code, &body)?;
             },
             Error::InvalidVersion => {
                 write!(f, "Invalid Zone Version Requested")?;
+            },
+            Error::InvalidPost => {
+                write!(f, "You tried to submit a POST with no argument")?;
             },
             Error::NoRecord => {
                 write!(f, "Couldn't find a matching record")?;
