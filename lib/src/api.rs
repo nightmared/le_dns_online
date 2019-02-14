@@ -5,8 +5,9 @@ use serde_derive::*;
 use crate::net::*;
 use crate::error::Error;
 
-// We need to implement this special type because the API can return the tty both as a number and
-// as a string !? As a result, we need to parse this entry properly
+/// Represents the Time To Live of a record. This struct is solely necessary as a byproduct of
+/// some tiny issues in the API. Indeed, the server can return the ttl both as a number and
+/// as a string. As a result, we need this artefact to parse correctly the records.
 #[derive(Debug)]
 pub struct TTL {
     pub val: usize
@@ -54,7 +55,7 @@ impl<'de> Deserialize<'de> for TTL {
 }
 
 /// A DNS domain.
-/// For API design reason, we also store the API key inside the domain.
+/// For API design reasons, we also store the API key inside the domain.
 #[derive(Deserialize, Debug)]
 pub struct Domain<'a> {
     #[serde(skip)]
@@ -78,7 +79,7 @@ pub struct Record {
 }
 
 /// A DNS Zone.
-/// Please note this zone may not be the one currently active for the domain.
+/// Please keep in mind that this zone may not be the one currently active for the domain.
 #[derive(Deserialize, Debug)]
 pub struct Version {
     pub uuid_ref: String,

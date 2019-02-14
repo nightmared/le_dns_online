@@ -1,10 +1,10 @@
 use curl::easy::{Easy, List};
 use crate::error::{Error, APIError};
 
-/// This struct hold a (key, value) tuple of data to send along a HTTP POST or PATCH request
+/// Holds a (key, value) tuple of data to send along a HTTP POST or PATCH request
 pub struct PostData<'a>(pub &'a str, pub &'a str);
 
-/// This enum contains all the kinds of operations supported by the API
+/// Contains all the kinds of operations supported by the API
 /// You have to specify data if you are using an operation that requires it, such as POST.
 pub enum HTTPOp<'a> {
     GET,
@@ -63,7 +63,7 @@ pub fn query_set_type<'a>(http_operation: HTTPOp<'a>) -> impl Fn(Easy) -> Result
             },
             HTTPOp::POST(data) => {
                 req.post(true)?;
-                attach_data(&mut req, data);
+                attach_data(&mut req, data)?;
             }
         }
         Ok(req)

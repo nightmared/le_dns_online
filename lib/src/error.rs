@@ -12,13 +12,19 @@ pub struct APIError {
 /// The various errors thay may be returned by the API, ranging from network errors to unproper use
 /// of the API, and through serializations errors.
 pub enum Error {
+    /// Network error or invalid query
     CurlError(curl::Error),
+    /// JSON parsing error
     SerdeError(serde_json::Error),
+    /// The remote endpoint returned a HTTP error code
     ApiError(APIError),
+    /// A None value was deferenced
     UnwrappingError,
+    /// The zone specified is invalid or nonexistent
     InvalidVersion,
     /// Occurs when a POST is made without any argument
     InvalidPost,
+    /// No matching record found
     NoRecord
 }
 
