@@ -1,10 +1,11 @@
 use std::fmt;
-use serde::{Deserialize, Deserializer};
-use serde::de::{self, Visitor};
+use serde::Deserializer;
+use serde::de::Visitor;
 use serde_derive::*;
 
 use crate::net::*;
 use crate::error::Error;
+use crate::bind::to_bind;
 
 // So trivial, right ! (actually, this is a rather convolved way of doing something simple)
 // This artefact is solely necessary as a byproduct of some tiny issues in the API. Indeed,
@@ -54,14 +55,14 @@ pub struct Record {
     pub id: usize,
     pub name: String,
     #[serde(rename = "type")]
-    pub record_type: String,
+    pub record_type: DNSType,
 	#[serde(deserialize_with = "deserialize_ttl")]
     pub ttl: usize,
     pub data: String
 }
 
 impl Record {
-    pub fn new(entry_name: impl Into<String>, entry_type: impl Into<String>,
+    pub fn new(entry_name: impl Into<String>, entry_type: impl Into<DNSType>,
         entry_value: impl Into<String>, entry_ttl: usize) -> Record {
             Record {
                 // The id doesn't actually matter, it isn't passed on to the online.net API
@@ -79,7 +80,8 @@ impl Record {
 /// Please keep in mind that this zone may not be the one currently active for the domain.
 #[derive(Deserialize, Debug)]
 pub struct Version {
-    pub uuid_ref: String,
+    #[serde(rename = "uuid_ref")]
+    pub uuid: String,
     pub name: String,
     pub active: bool
 }
@@ -118,15 +120,8 @@ impl<'a> Domain<'a> {
         None
     }
 
-    /// Create a new (disabled at the moment) zone.
-    pub fn add_version(&self, name: &str) -> Result<Version, Error> {
-        let domain_version_url = format!("/domain/{}/version", self.name);
-        let domain_version_post_data = vec![PostData("name", &name)];
-        execute_query(self.api_key, &domain_version_url, query_set_type(HTTPOp::POST(&domain_version_post_data)), parse_json)
-    }
-
-    /// Extract all record with a name of "entry_name" and with a value of "entry_value" (or any value if entry_value is None) from the zone 'zone'.
-    pub fn get_record(&self, zone: &Version, entry_name: &str, entry_value: Option<&str>) -> Result<Option<Vec<Record>>, Error> {
+    /// Extract all records with a name of "entry_name" and with a value of "entry_value" (or any value if entry_value is None) from the zone 'zone'.
+    pub fn filter_records(&self, zone: &Version, entry_name: &str, entry_value: Option<&str>) -> Result<Option<Vec<Record>>, Error> {
         let entries = self.get_zone_records(zone)?;
         let mut res = vec![];
         for e in entries {
@@ -147,49 +142,77 @@ impl<'a> Domain<'a> {
     }
 
     /// Append a new entry 'record' to the zone 'destination'.
-    pub fn append_record(&self, destination: &Version, record: &Record) -> Result<Record, Error> {
-        if destination.active {
-            self.patch_active_record(record)
-        } else {
-            let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
-			let ttl = record.ttl.to_string();
-            let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("priority", "12"), PostData("ttl", &ttl), PostData("data", &record.data)];
-            execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::POST(&post_entries)), parse_json)
+    /// The target zone MUST be inactive.
+    pub fn add_record(&self, destination: &Version, record: &Record) -> Result<Record, Error> {
+        let dst = self.get_version(&destination.uuid)?;
+        if dst.active {
+            return Err(Error::ActiveZoneForbidden);
         }
-    }
 
-    /// Edit records of the active version.
-    fn patch_active_record(&self, record: &Record) -> Result<Record, Error> {
-        let url = format!("/domain/{}/version/active", self.name);
-		let records = serde_json::to_string(&[record])?;
-        let patch_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("records", &records)];
-            execute_query(self.api_key, &url, query_set_type(HTTPOp::PATCH(Some(&patch_entries))), parse_json)
-
+        let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, dst.uuid);
+        let ttl = record.ttl.to_string();
+        let record_type = String::from(&record.record_type);
+        let post_entries = vec![FormData("name", &record.name), FormData("type", &record_type), FormData("priority", "12"), FormData("ttl", &ttl), FormData("data", &record.data)];
+        execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::POST(&post_entries)), parse_json)
     }
 
     /// Copy all the records from 'source' to the zone 'destination' and return the updated zone records.
-    /// This will not erase the curretn entries but append next to the them.
-    pub fn copy_zone(&self, source: Vec<Record>, destination: &Version) -> Result<Vec<Record>, Error> {
-        let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
+    /// This will not erase the current entries but append next to the them.
+    pub fn copy_records(&self, source: Vec<Record>, destination: &Version) -> Result<Vec<Record>, Error> {
+        let dst = self.get_version(&destination.uuid)?;
+        if dst.active {
+            return Err(Error::ActiveZoneForbidden);
+        }
+
+        let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, dst.uuid);
         let mut dest_zone: Vec<Record> = execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::GET), parse_json)?;
         for ref entry in source {
-            dest_zone.push(self.append_record(destination, entry)?);
+            dest_zone.push(self.add_record(destination, entry)?);
         }
         Ok(dest_zone)
     }
 
+    /// Populate the zone "destination" with 'records'.
+    /// Note this will destroy any prior entry in that zone.
+    /// Internally this calls the endpoint 
+    /// /domain/{domain_name}/version/{version_id}/zone_from_bind
+    pub fn set_zone_entries(&self, destination: &Version, records: &[Record]) -> Result<(), Error> {
+        let dst = self.get_version(&destination.uuid)?;
+        if dst.active {
+            return Err(Error::ActiveZoneForbidden);
+        }
+
+        let bind_zone = to_bind(records);
+
+        let domain_version_url = format!("/domain/{}/version/{}/zone_from_bind", self.name, dst.uuid);
+        execute_query(self.api_key, &domain_version_url, query_set_type(HTTPOp::PUT(&bind_zone)), throw_value)
+    }
+
+    /// Create a new (disabled at the moment) zone.
+    pub fn add_version(&self, name: &str) -> Result<Version, Error> {
+        let domain_version_url = format!("/domain/{}/version", self.name);
+        let domain_version_post_data = vec![FormData("name", &name)];
+        execute_query(self.api_key, &domain_version_url, query_set_type(HTTPOp::POST(&domain_version_post_data)), parse_json)
+    }
+
     /// Enable a specific zone as the current one for the domain.
     pub fn enable_version(&self, v: &Version) -> Result<(), Error> {
-        let url = format!("/domain/{}/version/{}/enable", self.name, v.uuid_ref);
+        let url = format!("/domain/{}/version/{}/enable", self.name, v.uuid);
         execute_query(self.api_key, &url, query_set_type(HTTPOp::PATCH(None)), throw_value)
     }
 
     /// Delete an old zone.
     /// As a result, deleting the current zone will fail.
     pub fn delete_version(&self, v: &Version) -> Result<(), Error> {
-        let url = format!("/domain/{}/version/{}", self.name, v.uuid_ref);
+        let url = format!("/domain/{}/version/{}", self.name, v.uuid);
         execute_query(self.api_key, &url, query_set_type(HTTPOp::DELETE), |_| -> Result<(), Error> { Ok(()) })
     }
+
+	/// Return the version of a given uuid
+	pub fn get_version(&self, uuid: &str) -> Result<Version, Error> {
+        let url = format!("/domain/{}/version/{}", self.name, uuid);
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)
+}
 
     /// Return the list of all available zones.
     pub fn get_versions(&self) -> Result<Vec<Version>, Error> {
@@ -211,28 +234,13 @@ impl<'a> Domain<'a> {
 
     /// Return the list of all the records in the zone 'zone'.
     pub fn get_zone_records(&self, zone: &Version) -> Result<Vec<Record>, Error> {
-        let zone_url = format!("/domain/{}/version/{}/zone", self.name, zone.uuid_ref);
+        let zone_url = format!("/domain/{}/version/{}/zone", self.name, zone.uuid);
         execute_query(self.api_key, &zone_url, query_set_type(HTTPOp::GET), parse_json)
-    }
-
-    /// Add a new record to the zone "destination".
-    pub fn add_record(&self, destination: &Version, entry_name: impl Into<String>,
-    entry_type: impl Into<String>, entry_value: impl Into<String>, entry_ttl: usize) -> Result<Record, Error> {
-        Ok(self.append_record(destination,
-            &Record {
-                // The id doesn't actually matter, it isn't passed on to the online.net API
-                id: 0,
-                name: entry_name.into(),
-                record_type: entry_type.into(),
-                ttl: entry_ttl,
-                data: entry_value.into()
-            })?
-        )
     }
 
     /// Delete a record in 'zone' matching 'record'
     pub fn delete_record(&self, zone: &Version, record: &Record) -> Result<(), Error> {
-        let url = format!("/domain/{}/version/{}/zone/{}", self.name, zone.uuid_ref, record.id);
+        let url = format!("/domain/{}/version/{}/zone/{}", self.name, zone.uuid, record.id);
         execute_query(self.api_key, &url, query_set_type(HTTPOp::DELETE), throw_value)?;
         Ok(())
     }

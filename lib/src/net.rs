@@ -1,19 +1,22 @@
+use serde_derive::*;
 use curl::easy::{Easy, List};
 use crate::error::{Error, APIError};
 
 /// Holds a (key, value) tuple of data to send along a HTTP POST or PATCH request
-pub struct PostData<'a>(pub &'a str, pub &'a str);
+pub struct FormData<'a>(pub &'a str, pub &'a str);
 
 /// Contains all the kinds of operations supported by the API
 /// You have to specify data if you are using an operation that requires it, such as POST.
 pub enum HTTPOp<'a> {
     GET,
-    POST(&'a [PostData<'a>]),
-    PATCH(Option<&'a [PostData<'a>]>),
+    PUT(&'a str),
+    POST(&'a [FormData<'a>]),
+    PATCH(Option<&'a [FormData<'a>]>),
     DELETE
 }
 
 /// The various types of DNS entries you may add
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug)]
 pub enum DNSType {
     A,
     AAAA,
@@ -23,8 +26,8 @@ pub enum DNSType {
     NS
 }
 
-impl From<DNSType> for String {
-    fn from(e: DNSType) -> Self {
+impl From<&DNSType> for String {
+    fn from(e: &DNSType) -> Self {
         match e {
             DNSType::A => "A",
             DNSType::AAAA => "AAAA",
@@ -35,6 +38,22 @@ impl From<DNSType> for String {
         }.into()
     }
 }
+
+impl From<&str> for DNSType {
+    fn from(e: &str) -> Self {
+        match e {
+            "A" => DNSType::A,
+            "AAAA" => DNSType::AAAA,
+            "TXT" => DNSType::TXT,
+            "CNAME" => DNSType::CNAME,
+            "MX" => DNSType::MX,
+            "NS" => DNSType::NS,
+            // Yes, this default value doesn't really make sense, but you know...
+            _ => DNSType::TXT
+        }
+    }
+}
+
 
 /// Generate a query using curl easyHTTP interface
 /// This will request the api endpoint at the url api_endpoint with the user-supplied authentification token auth_token
@@ -53,7 +72,7 @@ pub fn make_query(api_endpoint: &str, auth_token: &str) -> Result<Easy, curl::Er
     Ok(easy)
 }
 
-fn attach_data(req: &mut Easy, data: &[PostData]) -> Result<(), Error> {
+fn attach_data(req: &mut Easy, data: &[FormData]) -> Result<(), Error> {
     if data.len() == 0 {
         return Err(Error::InvalidPost);
     }
@@ -78,6 +97,11 @@ pub fn query_set_type<'a>(http_operation: HTTPOp<'a>) -> impl Fn(Easy) -> Result
         match http_operation {
             HTTPOp::GET => req.get(true)?,
             HTTPOp::DELETE => req.custom_request("DELETE")?,
+            HTTPOp::PUT(data) => {
+                req.custom_request("PUT")?;
+                req.post_field_size(data.len() as u64)?;
+                req.post_fields_copy(data.as_bytes())?;
+			},
             HTTPOp::PATCH(data) => {
                 req.custom_request("PATCH")?;
                 if let Some(data) = data {
@@ -139,4 +163,9 @@ pub fn parse_json<T>(data: &[u8]) -> Result<T, serde_json::Error> where for <'de
 /// have to annotate the type T for your module to compile.
 pub fn throw_value(_data: &[u8]) -> Result<(), Error> {
     Ok(())
+}
+
+/// Return the data from the API, converted to UTF8
+pub fn to_string(data: &[u8]) -> Result<String, Error> {
+    Ok(String::from_utf8(data.to_vec())?)
 }

@@ -3,17 +3,16 @@ use std::time::SystemTime;
 
 use lib::*;
 
-fn usage(app_name: &str) {
-    eprintln!("Usage:\t{} add_record ONLINE_API_KEY RECORD_NAME TXT_VALUE", app_name);
-    eprintln!("\t\t{} delete_record ONLINE_API_KEY RECORD_NAME TXT_VALUE", app_name);
+fn usage() {
+    eprintln!("Usage:\tle_dns_online add_record ONLINE_API_KEY RECORD_NAME TXT_VALUE");
+    eprintln!("\t\tle_dns_online delete_record ONLINE_API_KEY RECORD_NAME TXT_VALUE");
 }
 
 fn main() {
-    let mut args = env::args();
-    let app_name = args.next().unwrap();
-    if args.len() != 3 {
-        eprintln!("Called with an invalid number of arguments (3 expected, received {})", args.len());
-        usage(&app_name);
+    let mut args = env::args().skip(1);
+    if args.len() != 4 {
+        eprintln!("Called with an invalid number of arguments (4 expected, received {})", args.len());
+        usage();
         return;
     }
     let action = args.next().unwrap();
@@ -30,16 +29,27 @@ fn main() {
         let zone = domain.get_current_zone().unwrap();
         match action.as_str() {
             "add_record" => {
-                domain.add_record(&zone, record.clone(), "TXT", txt_value, 86400).unwrap();
+                let mut zone_entries = domain.get_zone_records(&zone).unwrap();
+                zone_entries.push(Record::new(record.clone(), net::DNSType::TXT, txt_value, 86400));
+                let new_zone_name = format!("LE-challenge-{}", current_time);
+                let new_zone = domain.add_version(&new_zone_name).unwrap();
+                domain.set_zone_entries(&new_zone, &zone_entries).unwrap();
+                domain.enable_version(&new_zone).unwrap();
             },
             "delete_record" => {
-                while let Some(records) = domain.get_record(&zone, &record, Some(&txt_value)).unwrap() {
-                    domain.delete_record(&zone, &records[0]).unwrap();
-                }
+                let zone_entries: Vec<Record> = domain.get_zone_records(&zone)
+                    .unwrap()
+                    .into_iter()
+                    .filter(|x| !(x.name == record && x.data == txt_value))
+                    .collect();
+                let new_zone_name = format!("LE-challenge-cleanup-{}", current_time);
+                let new_zone = domain.add_version(&new_zone_name).unwrap();
+                domain.set_zone_entries(&new_zone, zone_entries.as_slice()).unwrap();
+                domain.enable_version(&new_zone).unwrap();
             },
             _ => {
                 eprintln!("Invalid action");
-                usage(&app_name);
+                usage();
             }
         }
     } else {

@@ -18,6 +18,10 @@ pub enum Error {
     SerdeError(serde_json::Error),
     /// The remote endpoint returned a HTTP error code
     ApiError(APIError),
+    /// A conversion to an utf-8 string failed
+    FromUtf8Error(std::string::FromUtf8Error),
+    /// The active zone cannot be modified,
+    ActiveZoneForbidden,
     /// A None value was deferenced
     UnwrappingError,
     /// The zone specified is invalid or nonexistent
@@ -40,6 +44,12 @@ impl convert::From<serde_json::Error> for Error {
     }
 }
 
+impl convert::From<std::string::FromUtf8Error> for Error {
+    fn from(e: std::string::FromUtf8Error) -> Error {
+        Error::FromUtf8Error(e)
+    }
+}
+
 impl convert::From<option::NoneError> for Error {
     fn from(_: option::NoneError) -> Error {
         Error::UnwrappingError
@@ -56,16 +66,23 @@ impl Debug for Error {
             Error::SerdeError(e) => {
                 write!(f, "Parsing Error({:?})", e)?;
             },
+            Error::FromUtf8Error(e) => {
+                write!(f, "UTF8 Conversion Error({:?})", e)?;
+            },
             Error::UnwrappingError => {
                 write!(f, "Err... Tried to unwrap some None there ;(")?;
             },
             Error::ApiError(e) => {
-                let body = if e.body.len() > 150 {
-                        format!("{:?}...OUTPUT TRUNCATED...{:?}", &e.body[0..100], &e.body[e.body.len()-50..e.body.len()])
+				let body_str = String::from_utf8(e.body.clone()).unwrap();
+                let body = if body_str.len() > 150 {
+                        format!("{}...OUTPUT TRUNCATED...{}", &body_str[0..100], &body_str[body_str.len()-50..body_str.len()])
                     } else {
-                        format!("{:?}", e.body)
+                        format!("{}", body_str)
                     };
                 write!(f, "API Error(url = '{}', status_code = '{}', body = '{}')", e.url, e.status_code, &body)?;
+            },
+            Error::ActiveZoneForbidden => {
+                write!(f, "Mutation of the currently active Zone is Forbidden")?;
             },
             Error::InvalidVersion => {
                 write!(f, "Invalid Zone Version Requested")?;
