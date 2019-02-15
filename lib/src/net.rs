@@ -13,6 +13,29 @@ pub enum HTTPOp<'a> {
     DELETE
 }
 
+/// The various types of DNS entries you may add
+pub enum DNSType {
+    A,
+    AAAA,
+    TXT,
+    CNAME,
+    MX,
+    NS
+}
+
+impl From<DNSType> for String {
+    fn from(e: DNSType) -> Self {
+        match e {
+            DNSType::A => "A",
+            DNSType::AAAA => "AAAA",
+            DNSType::TXT => "TXT",
+            DNSType::CNAME => "CNAME",
+            DNSType::MX => "MX",
+            DNSType::NS => "NS"
+        }.into()
+    }
+}
+
 /// Generate a query using curl easyHTTP interface
 /// This will request the api endpoint at the url api_endpoint with the user-supplied authentification token auth_token
 pub fn make_query(api_endpoint: &str, auth_token: &str) -> Result<Easy, curl::Error> {

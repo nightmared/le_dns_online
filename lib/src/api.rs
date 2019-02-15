@@ -1,57 +1,38 @@
 use std::fmt;
-use serde::{Deserialize, Deserializer, de::Visitor};
+use serde::{Deserialize, Deserializer};
+use serde::de::{self, Visitor};
 use serde_derive::*;
 
 use crate::net::*;
 use crate::error::Error;
 
-/// Represents the Time To Live of a record. This struct is solely necessary as a byproduct of
-/// some tiny issues in the API. Indeed, the server can return the ttl both as a number and
-/// as a string. As a result, we need this artefact to parse correctly the records.
-#[derive(Debug)]
-pub struct TTL {
-    pub val: usize
-}
-
-impl TTL {
-    pub fn as_string(&self) -> String {
-        format!("{}", self.val)
-    }
-}
-
 // So trivial, right ! (actually, this is a rather convolved way of doing something simple)
-impl<'de> Deserialize<'de> for TTL {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-        struct UsizeVisitor;
-        impl<'de> Visitor<'de> for UsizeVisitor {
-            type Value = TTL;
+// This artefact is solely necessary as a byproduct of some tiny issues in the API. Indeed,
+// the server can return the ttl both as a number and as a string.
+fn deserialize_ttl<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where D: Deserializer<'de> {
+	struct UsizeVisitor;
+	impl<'de> Visitor<'de> for UsizeVisitor {
+		type Value = usize;
 
-            fn expecting(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-                fmt.write_str("usize compatible type")
-            }
+		fn expecting(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+			fmt.write_str("usize compatible type")
+		}
 
-            fn visit_u32<E>(self, val: u32) -> Result<Self::Value, E> {
-                Ok(TTL {
-                    val: val as usize
-                })
-            }
+		fn visit_u32<E>(self, val: u32) -> Result<Self::Value, E> {
+			Ok(val as usize)
+		}
 
-            fn visit_u64<E>(self, val: u64) -> Result<Self::Value, E> {
-                Ok(TTL {
-                    val: val as usize
-                })
-            }
+		fn visit_u64<E>(self, val: u64) -> Result<Self::Value, E> {
+			Ok(val as usize)
+		}
 
-            fn visit_str<E>(self, val: &str) -> Result<Self::Value, E> {
-                Ok(TTL {
-                    val: val.parse().unwrap()
-                })
-            }
+		fn visit_str<E>(self, val: &str) -> Result<Self::Value, E> {
+			Ok(val.parse().unwrap())
+		}
+	}
+	deserializer.deserialize_any(UsizeVisitor)
 
-        }
-        deserializer.deserialize_any(UsizeVisitor)
-
-    }
 }
 
 /// A DNS domain.
@@ -68,15 +49,31 @@ pub struct Domain<'a> {
 
 /// A DNS entry.
 /// The query type is stored as a string ("TXT", "AAAA", ...).
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Record {
     pub id: usize,
     pub name: String,
     #[serde(rename = "type")]
     pub record_type: String,
-    pub ttl: TTL,
+	#[serde(deserialize_with = "deserialize_ttl")]
+    pub ttl: usize,
     pub data: String
 }
+
+impl Record {
+    pub fn new(entry_name: impl Into<String>, entry_type: impl Into<String>,
+        entry_value: impl Into<String>, entry_ttl: usize) -> Record {
+            Record {
+                // The id doesn't actually matter, it isn't passed on to the online.net API
+                id: 0,
+                name: entry_name.into(),
+                record_type: entry_type.into(),
+                ttl: entry_ttl,
+                data: entry_value.into()
+            }
+    }
+}
+
 
 /// A DNS Zone.
 /// Please keep in mind that this zone may not be the one currently active for the domain.
@@ -151,17 +148,22 @@ impl<'a> Domain<'a> {
 
     /// Append a new entry 'record' to the zone 'destination'.
     pub fn append_record(&self, destination: &Version, record: &Record) -> Result<Record, Error> {
-        let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
-        let ttl = record.ttl.as_string();
-        let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("priority", "12"), PostData("ttl", &ttl), PostData("data", &record.data)];
-        execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::POST(&post_entries)), parse_json)
+        if destination.active {
+            self.patch_active_record(record)
+        } else {
+            let dest_zone_url = format!("/domain/{}/version/{}/zone", self.name, destination.uuid_ref);
+			let ttl = record.ttl.to_string();
+            let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("priority", "12"), PostData("ttl", &ttl), PostData("data", &record.data)];
+            execute_query(self.api_key, &dest_zone_url, query_set_type(HTTPOp::POST(&post_entries)), parse_json)
+        }
     }
 
     /// Edit records of the active version.
-    pub fn patch_active_record(&self, destination: &Version, record: &Record) -> Result<Record, Error> {
+    fn patch_active_record(&self, record: &Record) -> Result<Record, Error> {
         let url = format!("/domain/{}/version/active", self.name);
-        //let post_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("records", [record.data])];
-        unimplemented!()
+		let records = serde_json::to_string(&[record])?;
+        let patch_entries = vec![PostData("name", &record.name), PostData("type", &record.record_type), PostData("records", &records)];
+            execute_query(self.api_key, &url, query_set_type(HTTPOp::PATCH(Some(&patch_entries))), parse_json)
 
     }
 
@@ -214,15 +216,15 @@ impl<'a> Domain<'a> {
     }
 
     /// Add a new record to the zone "destination".
-    pub fn add_record(&self, destination: &Version, entry_name: impl Into<String>, entry_type: impl Into<String>,
-    entry_value: impl Into<String>, entry_ttl: usize) -> Result<Record, Error> {
+    pub fn add_record(&self, destination: &Version, entry_name: impl Into<String>,
+    entry_type: impl Into<String>, entry_value: impl Into<String>, entry_ttl: usize) -> Result<Record, Error> {
         Ok(self.append_record(destination,
             &Record {
                 // The id doesn't actually matter, it isn't passed on to the online.net API
                 id: 0,
                 name: entry_name.into(),
                 record_type: entry_type.into(),
-                ttl: TTL { val: entry_ttl },
+                ttl: entry_ttl,
                 data: entry_value.into()
             })?
         )

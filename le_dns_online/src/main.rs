@@ -5,21 +5,14 @@ use lib::*;
 
 fn usage(app_name: &str) {
     eprintln!("Usage:\t{} add_record ONLINE_API_KEY RECORD_NAME TXT_VALUE", app_name);
-    eprintln!("\t{} delete_record ONLINE_API_KEY RECORD_NAME TXT_VALUE", app_name);
-}
-
-fn create_and_copy_current_zone(domain: &Domain, version_name: String) -> Version {
-    let zone = domain.get_current_zone().unwrap();
-    let new_zone = domain.add_version(&version_name).unwrap();
-    domain.copy_zone(domain.get_zone_records(&zone).unwrap(), &new_zone).unwrap();
-    new_zone
+    eprintln!("\t\t{} delete_record ONLINE_API_KEY RECORD_NAME TXT_VALUE", app_name);
 }
 
 fn main() {
     let mut args = env::args();
     let app_name = args.next().unwrap();
-    if args.len() != 4 {
-        eprintln!("Called with an invalid number of arguments");
+    if args.len() != 3 {
+        eprintln!("Called with an invalid number of arguments (3 expected, received {})", args.len());
         usage(&app_name);
         return;
     }
@@ -34,18 +27,15 @@ fn main() {
     let available_domains = query_available_domains(&api_key).unwrap();
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
     if let Some((domain, _)) = Domain::find_and_extract_path(&record, available_domains) {
+        let zone = domain.get_current_zone().unwrap();
         match action.as_str() {
             "add_record" => {
-                let new_zone = create_and_copy_current_zone(&domain, format!("LE-challenge-{}", current_time));
-                domain.add_record(&new_zone, record.clone(), "TXT", txt_value, 86400).unwrap();
-                domain.enable_version(&new_zone).unwrap();
+                domain.add_record(&zone, record.clone(), "TXT", txt_value, 86400).unwrap();
             },
             "delete_record" => {
-                let new_zone = create_and_copy_current_zone(&domain, format!("LE-challenge-{}-validated", current_time));
-                while let Some(records) = domain.get_record(&new_zone, &record, Some(&txt_value)).unwrap() {
-                    domain.delete_record(&new_zone, &records[0]).unwrap();
+                while let Some(records) = domain.get_record(&zone, &record, Some(&txt_value)).unwrap() {
+                    domain.delete_record(&zone, &records[0]).unwrap();
                 }
-                domain.enable_version(&new_zone).unwrap();
             },
             _ => {
                 eprintln!("Invalid action");
