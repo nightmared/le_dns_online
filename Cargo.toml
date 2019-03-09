@@ -1,5 +1,8 @@
-[workspace]
-members = [
-    "lib",
-    "le_dns_online"
-]
+[package]
+name = "le_dns_online"
+version = "0.1.0"
+authors = ["Simon THOBY <simonthoby@live.fr>"]
+edition = "2018"
+
+[dependencies]
+dns_online = "0.1.1"
