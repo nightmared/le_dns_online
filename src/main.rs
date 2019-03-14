@@ -1,4 +1,4 @@
-use std::env;
+use clap::{App, Arg};
 
 use dns_online::*;
 
@@ -8,41 +8,77 @@ fn usage() {
 }
 
 fn main() {
-    let mut args = env::args().skip(1);
-    if args.len() != 5 {
-        eprintln!("Called with an invalid number of arguments (5 expected, received {})", args.len());
-        usage();
-        return;
-    }
-    let action = args.next().unwrap();
-    let zone_name = args.next().unwrap();
-    let api_key = args.next().unwrap();
-    let mut record = args.next().unwrap();
-    if !record.ends_with(".") {
-        record.push('.');
-    }
-    let txt_value = args.next().unwrap();
+    let matches = App::new("le_dns_online")
+        .version("0.1")
+        .author("Simon Thoby <simonthoby+ledns@gmail.com>")
+        .about("Easily add or delete record in your online.net DNS zone")
+        .arg(Arg::with_name("API key")
+            .short("a")
+            .long("api-key")
+            .takes_value(true)
+            .required(true))
+        .arg(Arg::with_name("Record")
+            .short("n")
+            .long("name")
+            .takes_value(true)
+            .required(true))
+        .arg(Arg::with_name("Operation")
+            .short("o")
+            .long("operation")
+            .possible_values(&["add", "delete"])
+            .takes_value(true)
+            .required(true))
+        .arg(Arg::with_name("Data")
+            .short("d")
+            .long("data")
+            .takes_value(true))
+        .arg(Arg::with_name("Version Name")
+            .short("v")
+            .long("version")
+            .takes_value(true)
+            .required(true))
+        .get_matches();
+
+    let api_key = matches.value_of("API key").unwrap();
+    let record = {
+        let mut record = matches.value_of("Record").unwrap().to_owned();
+        if !record.ends_with(".") {
+            record.push('.');
+        }
+        record
+    };
+    let txt_value = matches.value_of("Data");
+    let zone_name = matches.value_of("Version Name").unwrap();
 
     let available_domains = query_available_domains(&api_key).unwrap();
     if let Some((domain, _)) = Domain::find_and_extract_path(&record, available_domains) {
         let zone = domain.get_current_zone().unwrap();
-        match action.as_str() {
-            "add_record" => {
+        match matches.value_of("Operation").unwrap() {
+            "add" => {
+                if txt_value.is_none() {
+                    eprintln!("Please specify the TXT entry to add with the --data flag");
+                    return;
+                }
                 let mut zone_entries = domain.get_zone_records(&zone).unwrap();
-                zone_entries.push(Record::new(record.clone(), net::DNSType::TXT, txt_value, 86400));
+                zone_entries.push(Record::new(record.clone(), net::DNSType::TXT, txt_value.unwrap(), 86400));
                 println!("Adding a new record to zone {} for domain {}...", zone.name, domain.name);
                 let new_zone = domain.add_version(&zone_name).unwrap();
                 domain.set_zone_entries(&new_zone, &zone_entries).unwrap();
                 domain.enable_version(&new_zone).unwrap();
                 println!("The entry {} has been deployed.", record);
             },
-            "delete_record" => {
-                println!("Suppressing the entry {} in domain {}...", record, domain.name);
+            "delete" => {
+                println!("Suppressing the entries {} in domain {}...", record, domain.name);
                 let old_zone_entries: Vec<Record> = domain.get_zone_records(&zone).unwrap();
                 let new_zone_entries: Vec<Record> = old_zone_entries
                     .clone()
                     .into_iter()
-                    .filter(|x| !(x.record_type == net::DNSType::TXT && x.name == record && x.data[1..x.data.len()-1] == txt_value))
+                    .filter(|x| {
+                        match txt_value {
+                            Some(txt) => !(x.record_type == net::DNSType::TXT && x.name == record && &x.data[1..x.data.len()-1] == txt),
+                            None => !(x.record_type == net::DNSType::TXT && x.name == record)
+                        }
+                    })
                     .collect();
                 // nothing changed, so we don't do nothing
                 if new_zone_entries.len() == old_zone_entries.len() {
