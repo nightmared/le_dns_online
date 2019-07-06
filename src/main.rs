@@ -2,11 +2,6 @@ use clap::{App, Arg};
 
 use dns_online::*;
 
-fn usage() {
-    eprintln!("Usage:\tle_dns_online add_record ZONE_NAME ONLINE_API_KEY RECORD_NAME TXT_VALUE");
-    eprintln!("\t\tle_dns_online delete_record ZONE_NAME ONLINE_API_KEY RECORD_NAME TXT_VALUE");
-}
-
 fn main() {
     let matches = App::new("le_dns_online")
         .version("0.1")
@@ -32,6 +27,10 @@ fn main() {
             .short("d")
             .long("data")
             .takes_value(true))
+        .arg(Arg::with_name("Entry type")
+             .short("t")
+             .long("type")
+             .takes_value(true))
         .arg(Arg::with_name("Version Name")
             .short("v")
             .long("version")
@@ -47,20 +46,21 @@ fn main() {
         }
         record
     };
-    let txt_value = matches.value_of("Data");
+    let value = matches.value_of("Data");
     let zone_name = matches.value_of("Version Name").unwrap();
+    let record_type = matches.value_of("Entry type").unwrap_or("TXT").into();
 
     let available_domains = query_available_domains(&api_key).unwrap();
     if let Some((domain, _)) = Domain::find_and_extract_path(&record, available_domains) {
         let zone = domain.get_current_zone().unwrap();
         match matches.value_of("Operation").unwrap() {
             "add" => {
-                if txt_value.is_none() {
+                if value.is_none() {
                     eprintln!("Please specify the TXT entry to add with the --data flag");
                     return;
                 }
                 let mut zone_entries = domain.get_zone_records(&zone).unwrap();
-                zone_entries.push(Record::new(record.clone(), net::DNSType::TXT, txt_value.unwrap(), 86400));
+                zone_entries.push(Record::new(record.clone(), record_type, value.unwrap(), 86400));
                 println!("Adding a new record to zone {} for domain {}...", zone.name, domain.name);
                 let new_zone = domain.add_version(&zone_name).unwrap();
                 domain.set_zone_entries(&new_zone, &zone_entries).unwrap();
@@ -74,9 +74,14 @@ fn main() {
                     .clone()
                     .into_iter()
                     .filter(|x| {
-                        match txt_value {
-                            Some(txt) => !(x.record_type == net::DNSType::TXT && x.name == record && &x.data[1..x.data.len()-1] == txt),
-                            None => !(x.record_type == net::DNSType::TXT && x.name == record)
+                        if x.record_type != record_type || x.name != record {
+                            true
+                        } else {
+                            match value {
+                                // compare without the quotes
+                                Some(txt) => &x.data[1..x.data.len()-1] != txt,
+                                None => false
+                            }
                         }
                     })
                     .collect();
@@ -91,8 +96,8 @@ fn main() {
                 println!("The entry {} has been destroyed.", record);
             },
             _ => {
-                eprintln!("Invalid action");
-                usage();
+                // the possible_values() function of clap guarantees us we cannot reach this case
+                unreachable!()
             }
         }
     } else {
