@@ -3,7 +3,7 @@ name = "dns_online"
 version = "0.1.1"
 authors = ["Simon THOBY <simonthoby@live.fr>"]
 edition = "2018"
-repository = "https://github.com/nightmared/dns_online"
+repository = "https://github.com/nightmared/le_dns_online"
 description = "A simple wrapper for the online.net DNS API"
 license = "MPL-2.0"
 
