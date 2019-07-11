@@ -1,0 +1,12 @@
+[package]
+name = "le_dns_online"
+version = "0.1.0"
+authors = ["Simon THOBY <simonthoby@live.fr>"]
+edition = "2018"
+
+[dependencies]
+dns_online = { path = "../dns_online" }
+clap = "2.32.0"
+
+[[bin]]
+name= "le_dns_online"

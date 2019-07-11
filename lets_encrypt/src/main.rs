@@ -31,9 +31,9 @@ fn main() {
              .short("t")
              .long("type")
              .takes_value(true))
-        .arg(Arg::with_name("Version Name")
-            .short("v")
-            .long("version")
+        .arg(Arg::with_name("Zone Name")
+            .short("z")
+            .long("zname")
             .takes_value(true)
             .required(true))
         .get_matches();
@@ -50,7 +50,13 @@ fn main() {
     let zone_name = matches.value_of("Version Name").unwrap();
     let record_type = matches.value_of("Entry type").unwrap_or("TXT").into();
 
-    let available_domains = query_available_domains(&api_key).unwrap();
+    let available_domains = match query_available_domains(&api_key) {
+        Ok(domain) => domain,
+        Err(_) => {
+            eprintln!("No domain were found with you api key.");
+            return;
+        }
+    };
     if let Some((domain, _)) = Domain::find_and_extract_path(&record, available_domains) {
         let zone = domain.get_current_zone().unwrap();
         match matches.value_of("Operation").unwrap() {
@@ -96,7 +102,9 @@ fn main() {
                 println!("The entry {} has been destroyed.", record);
             },
             _ => {
-                // the possible_values() function of clap guarantees us we cannot reach this case
+                // the possible_values() function of clap guarantees us we cannot reach this case.
+                // Sadly, rustc doesn't have that information, so we still need to include that
+                // branch
                 unreachable!()
             }
         }
