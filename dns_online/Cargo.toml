@@ -1,6 +1,6 @@
 [package]
 name = "dns_online"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Simon THOBY <simonthoby@live.fr>"]
 edition = "2018"
 repository = "https://github.com/nightmared/le_dns_online"
@@ -8,10 +8,10 @@ description = "A simple wrapper for the online.net DNS API"
 license = "MPL-2.0"
 
 [dependencies]
-serde = "1.0.89"
-serde_derive = "1.0.89"
-serde_json = "1.0.39"
+serde = "1.0.94"
+serde_derive = "1.0.94"
+serde_json = "1.0.40"
 
 [dependencies.curl]
-version = "0.4.19"
+version = "0.4.22"
 features = ["static-curl", "static-ssl"]
