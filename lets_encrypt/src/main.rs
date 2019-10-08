@@ -47,7 +47,7 @@ fn main() {
         record
     };
     let value = matches.value_of("Data");
-    let zone_name = matches.value_of("Version Name").unwrap();
+    let zone_name = matches.value_of("Zone Name").unwrap();
     let record_type = matches.value_of("Entry type").unwrap_or("TXT").into();
 
     let available_domains = match query_available_domains(&api_key) {
