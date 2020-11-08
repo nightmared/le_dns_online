@@ -1,2 +1,4 @@
 /target
+/dns_online/target/
+/lets_encrypt/target/
 **/*.rs.bk
