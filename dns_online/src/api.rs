@@ -311,9 +311,9 @@ impl<'a> Domain<'a> {
         )
     }
 
-    /// Update a record in a version of the zone, provided it is not the active oneo (the APÏ
+    /// Update a record in a version of the zone, provided it is not the active one (the APÏ
     /// disallows it).
-    pub fn update_zone_record(
+    pub fn update_version_record(
         &self,
         zone: &Version,
         record: &Record,
@@ -343,20 +343,64 @@ impl<'a> Domain<'a> {
         )
     }
 
-    pub fn get_record(&self, zone: &Version, record_id: usize) -> Result<Record, Error> {
+    /// Update a record in the current version, by replacing its value.
+    pub fn update_current_version_record(
+        &self,
+        record: &Record,
+        new_value: &str,
+    ) -> Result<(), Error> {
+        self.execute_on_fake_version(|domain, version| {
+            domain.update_version_record(version, &record, new_value)
+        })
+    }
+
+    // Online.net api is buggy, and we cannot directly edit a record in the current zone (as is
+    // expected per the API docs), BUT we can update the zone by lying about the zone
+    // version we are updating: we create a fake version, and we ask the API servers to
+    // update a record in the active zone (specified by its ID), while saying it is in
+    // the new version we just created. This call succeeds and edit the current
+    // version, instead of telling us that this record doesn't exist in the new
+    // version. I love that kind of bugs (but I hope hope it's not as security issue!) ;)
+    pub fn execute_on_fake_version<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: Fn(&Domain, &Version) -> Result<R, Error>,
+    {
+        let version_name = format!(
+            "tmp-autoedit-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let new_version = self.add_version(&version_name)?;
+
+        let res = f(self, &new_version);
+
+        self.delete_version(&new_version)?;
+
+        let version = self.get_current_version()?;
+        // we need to re-enable the current version to tell the dns servers to reload the zone
+        self.enable_version(&version)?;
+
+        res
+    }
+
+    /// Retrieve the record identified by its 'record_id' in the version 'version'.
+    pub fn get_record(&self, version: &Version, record_id: usize) -> Result<Record, Error> {
         let url = format!(
             "/domain/{}/version/{}/zone/{}",
-            self.name, zone.uuid, record_id
+            self.name, version.uuid, record_id
         );
 
         execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)
     }
 
-    /// Delete a record in 'zone' matching 'record'
-    pub fn delete_record(&self, zone: &Version, record: &Record) -> Result<(), Error> {
+    /// Delete a record in 'version' matching 'record'
+    pub fn delete_record(&self, version: &Version, record: &Record) -> Result<(), Error> {
         let url = format!(
             "/domain/{}/version/{}/zone/{}",
-            self.name, zone.uuid, record.id
+            self.name, version.uuid, record.id
         );
         execute_query(
             self.api_key,
