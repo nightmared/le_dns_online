@@ -1,6 +1,6 @@
-use serde_derive::*;
+use crate::error::{APIError, Error};
 use curl::easy::{Easy, List};
-use crate::error::{Error, APIError};
+use serde_derive::*;
 
 /// Holds a (key, value) tuple of data to send along a HTTP POST or PATCH request
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -14,11 +14,11 @@ pub enum HTTPOp<'a> {
     PUT(&'a str),
     POST(&'a [FormData<'a>]),
     PATCH(Option<&'a [FormData<'a>]>),
-    DELETE
+    DELETE,
 }
 
 /// The various types of DNS entries you may add
-#[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum DNSType {
     A,
     AAAA,
@@ -26,7 +26,7 @@ pub enum DNSType {
     CNAME,
     MX,
     NS,
-    CAA
+    CAA,
 }
 
 impl From<&DNSType> for String {
@@ -38,8 +38,9 @@ impl From<&DNSType> for String {
             DNSType::CNAME => "CNAME",
             DNSType::MX => "MX",
             DNSType::NS => "NS",
-            DNSType::CAA => "CAA"
-        }.into()
+            DNSType::CAA => "CAA",
+        }
+        .into()
     }
 }
 
@@ -54,11 +55,10 @@ impl From<&str> for DNSType {
             "NS" => DNSType::NS,
             "CAA" => DNSType::CAA,
             // Yes, this default value doesn't really make sense, but you know...
-            _ => DNSType::TXT
+            _ => DNSType::TXT,
         }
     }
 }
-
 
 /// Generate a query using curl easyHTTP interface
 /// This will request the api endpoint at the url api_endpoint with the user-supplied authentification token auth_token
@@ -82,9 +82,13 @@ fn attach_data(req: &mut Easy, data: &[FormData]) -> Result<(), Error> {
         return Err(Error::InvalidPost);
     }
     // the data.len()*25 is just a very rough heuristic
-    let mut post_fields = String::with_capacity(data.len()*25);
+    let mut post_fields = String::with_capacity(data.len() * 25);
     for e in data {
-        let entry = format!("{}={}&", req.url_encode(e.0.as_bytes()), req.url_encode(e.1.as_bytes()));
+        let entry = format!(
+            "{}={}&",
+            req.url_encode(e.0.as_bytes()),
+            req.url_encode(e.1.as_bytes())
+        );
         post_fields.push_str(&entry);
     }
     // delete the last '&'
@@ -106,13 +110,13 @@ pub fn query_set_type<'a>(http_operation: HTTPOp<'a>) -> impl Fn(Easy) -> Result
                 req.custom_request("PUT")?;
                 req.post_field_size(data.len() as u64)?;
                 req.post_fields_copy(data.as_bytes())?;
-			},
+            }
             HTTPOp::PATCH(data) => {
                 req.custom_request("PATCH")?;
                 if let Some(data) = data {
                     attach_data(&mut req, data)?;
                 }
-            },
+            }
             HTTPOp::POST(data) => {
                 req.post(true)?;
                 attach_data(&mut req, data)?;
@@ -125,42 +129,55 @@ pub fn query_set_type<'a>(http_operation: HTTPOp<'a>) -> impl Fn(Easy) -> Result
 /// Generate and execute an HTTP query to 'api_endpoint'.
 /// This function allow you to provide a callback to configure the query (e.g. setting the type of query
 /// or adding data) and another function to parse the response from the api endpoint
-pub fn execute_query<T, F, F2, I: Into<Error>, I2: Into<Error>>(auth_token: &str, api_endpoint: &str, configure: F, parse: F2) -> Result<T, Error>
-where F: Fn(Easy) -> Result<Easy, I> + Sized, F2: Fn(&[u8]) -> Result<T, I2> + Sized {
+pub fn execute_query<T, F, F2, I: Into<Error>, I2: Into<Error>>(
+    auth_token: &str,
+    api_endpoint: &str,
+    configure: F,
+    parse: F2,
+) -> Result<T, Error>
+where
+    F: Fn(Easy) -> Result<Easy, I> + Sized,
+    F2: Fn(&[u8]) -> Result<T, I2> + Sized,
+{
     let req = make_query(api_endpoint, auth_token)?;
 
     let mut req = match configure(req) {
         Ok(x) => x,
-        Err(e) => return Err(e.into())
+        Err(e) => return Err(e.into()),
     };
 
     let mut buf = Vec::new();
     {
         let mut transfer = req.transfer();
-        transfer.write_function(|data| {
-            buf.extend_from_slice(data);
-            Ok(data.len())
-        }).unwrap();
+        transfer
+            .write_function(|data| {
+                buf.extend_from_slice(data);
+                Ok(data.len())
+            })
+            .unwrap();
 
         transfer.perform()?;
     }
     let res_code = req.response_code()?;
     if res_code < 200 || res_code >= 400 {
         return Err(Error::ApiError(APIError {
-			url: req.effective_url()?.unwrap_or("<UNKNOWN URL>").into(),
+            url: req.effective_url()?.unwrap_or("<UNKNOWN URL>").into(),
             status_code: res_code,
-            body: buf
+            body: buf,
         }));
     }
 
     match parse(&buf) {
         Ok(x) => Ok(x),
-        Err(e) => Err(e.into())
+        Err(e) => Err(e.into()),
     }
 }
 
 /// Return the json object parsed as a Rust object of type T
-pub fn parse_json<T>(data: &[u8]) -> Result<T, serde_json::Error> where for <'de> T: serde::Deserialize<'de> {
+pub fn parse_json<T>(data: &[u8]) -> Result<T, serde_json::Error>
+where
+    for<'de> T: serde::Deserialize<'de>,
+{
     Ok(serde_json::from_slice(data)?)
 }
 

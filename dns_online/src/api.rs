@@ -51,7 +51,7 @@ pub struct Domain<'a> {
 
 /// A DNS entry.
 /// The query type is stored as a string ("TXT", "AAAA", ...).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Record {
     pub id: usize,
     pub name: String,
@@ -111,13 +111,13 @@ pub fn query_available_domains<'a>(api_key: &'a str) -> Result<Vec<Domain<'a>>, 
 impl<'a> Domain<'a> {
     /// Try to extract the longest matching domain from the list of our available domains and the internal part of the name.
     /// e.g. extract_domain("this.is.a.dummy.test.fr.", {Domain("test.fr"), Domain("nope.fr")}) should return
-    /// the domain associated with "test.fr". and the internal path, aka "this.is.a.dummy."
+    /// the domain associated with "test.fr". and the internal path, aka "this.is.a.dummy"
     pub fn find_and_extract_path(
         full_domain_name: &'a str,
         domains: Vec<Domain<'a>>,
     ) -> Option<(Self, &'a str)> {
         let mut full_domain_name = full_domain_name;
-        // delete any trailing dot
+        // delete a trailing dot if any
         if full_domain_name.ends_with(".") {
             full_domain_name = &full_domain_name[0..full_domain_name.len() - 1];
         }
@@ -182,8 +182,8 @@ impl<'a> Domain<'a> {
         )
     }
 
-    /// Copy all the records from 'source' to the zone 'destination' and return the updated zone records.
-    /// This will not erase the current entries but append next to the them.
+    /// Copy all the records from 'source' to the version 'destination' and return the updated zone records.
+    /// This will not erase the current entries but append next to them.
     pub fn copy_records(
         &self,
         source: Vec<Record>,
@@ -205,6 +205,18 @@ impl<'a> Domain<'a> {
             dest_zone.push(self.add_record(destination, entry)?);
         }
         Ok(dest_zone)
+    }
+
+    /// Copy all the records from 'source' to a new version and return the new version.
+    pub fn duplicate_version(
+        &self,
+        source: &Version,
+        version_name: &str,
+    ) -> Result<Version, Error> {
+        let zone_entries: Vec<Record> = self.get_zone_records(source)?;
+        let new_zone = self.add_version(version_name)?;
+        self.set_zone_entries(&new_zone, &zone_entries)?;
+        Ok(new_zone)
     }
 
     /// Populate the zone "destination" with 'records'.
@@ -277,7 +289,7 @@ impl<'a> Domain<'a> {
     }
 
     /// Retrieve the Version describing the currently enable zone
-    pub fn get_current_zone(&self) -> Result<Version, Error> {
+    pub fn get_current_version(&self) -> Result<Version, Error> {
         let url = format!("/domain/{}/version", self.name);
         let versions: Vec<Version> =
             execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)?;
@@ -297,6 +309,47 @@ impl<'a> Domain<'a> {
             query_set_type(HTTPOp::GET),
             parse_json,
         )
+    }
+
+    /// Update a record in a version of the zone, provided it is not the active oneo (the APÏ
+    /// disallows it).
+    pub fn update_zone_record(
+        &self,
+        zone: &Version,
+        record: &Record,
+        new_value: &str,
+    ) -> Result<(), Error> {
+        let url = format!(
+            "/domain/{}/version/{}/zone/{}",
+            self.name, zone.uuid, record.id
+        );
+
+        let record_type = String::from(&record.record_type);
+        let ttl = record.ttl.to_string();
+
+        let patch_entries = vec![
+            FormData("name", &record.name),
+            FormData("type", &record_type),
+            FormData("priority", "12"),
+            FormData("ttl", &ttl),
+            FormData("data", new_value),
+        ];
+
+        execute_query(
+            self.api_key,
+            &url,
+            query_set_type(HTTPOp::PATCH(Some(&patch_entries))),
+            throw_value,
+        )
+    }
+
+    pub fn get_record(&self, zone: &Version, record_id: usize) -> Result<Record, Error> {
+        let url = format!(
+            "/domain/{}/version/{}/zone/{}",
+            self.name, zone.uuid, record_id
+        );
+
+        execute_query(self.api_key, &url, query_set_type(HTTPOp::GET), parse_json)
     }
 
     /// Delete a record in 'zone' matching 'record'
