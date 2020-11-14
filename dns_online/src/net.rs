@@ -27,6 +27,7 @@ pub enum DNSType {
     MX,
     NS,
     CAA,
+    SRV,
 }
 
 impl From<&DNSType> for String {
@@ -39,6 +40,7 @@ impl From<&DNSType> for String {
             DNSType::MX => "MX",
             DNSType::NS => "NS",
             DNSType::CAA => "CAA",
+            DNSType::SRV => "SRV",
         }
         .into()
     }
@@ -54,6 +56,7 @@ impl From<&str> for DNSType {
             "MX" => DNSType::MX,
             "NS" => DNSType::NS,
             "CAA" => DNSType::CAA,
+            "SRV" => DNSType::SRV,
             // Yes, this default value doesn't really make sense, but you know...
             _ => DNSType::TXT,
         }
